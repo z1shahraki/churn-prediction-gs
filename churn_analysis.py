@@ -14,13 +14,14 @@
 # ## 1. Setup and Imports
 
 # %%
-import pandas as pd
-import numpy as np
+import warnings
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import numpy as np
+import pandas as pd
 import seaborn as sns
 from sklearn.metrics import roc_curve
-import warnings
 
 # ── Global plot style ────────────────────────────────────────────────────────
 PALETTE  = {'no_churn': '#2D6A4F', 'churn': '#D62828'}
@@ -48,9 +49,12 @@ plt.rcParams.update({
 })
 
 def style_ax(ax, title=None, xlabel=None, ylabel=None):
-    if title:  ax.set_title(title, pad=10)
-    if xlabel: ax.set_xlabel(xlabel)
-    if ylabel: ax.set_ylabel(ylabel)
+    if title:
+        ax.set_title(title, pad=10)
+    if xlabel:
+        ax.set_xlabel(xlabel)
+    if ylabel:
+        ax.set_ylabel(ylabel)
     ax.tick_params(length=0)
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -107,19 +111,24 @@ def display_target_summary(data: pd.DataFrame, target_col: str) -> pd.DataFrame:
     print(summary)
     return summary
 
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.impute import SimpleImputer
+from IPython.display import display
 from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.dummy import DummyClassifier
-from sklearn.metrics import (
-    classification_report, confusion_matrix,
-    f1_score, precision_score, recall_score, roc_auc_score
-)
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.inspection import permutation_importance
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from xgboost import XGBClassifier
 
 warnings.filterwarnings('ignore')
@@ -169,6 +178,7 @@ df_clean['days_since_last_login'] = df_clean['days_since_last_login'].replace(-9
 # 4. Remove impossible negative values
 df_clean.loc[df_clean['avg_time_spent'] < 0, 'avg_time_spent'] = np.nan
 df_clean.loc[df_clean['points_in_wallet'] < 0, 'points_in_wallet'] = np.nan
+df_clean.loc[df_clean['avg_frequency_login_days'] < 0, 'avg_frequency_login_days'] = np.nan
 
 section_title("Data Quality Review")
 print("Data cleaning applied: placeholders replaced, sentinel values fixed, negatives removed.")
@@ -198,8 +208,7 @@ date_columns = ['joining_date', 'last_visit_time']
 categorical_columns = [
     'gender', 'region_category', 'membership_category', 'joined_through_referral',
     'preferred_offer_types', 'medium_of_operation', 'internet_option',
-    'used_special_discount', 'offer_application_preference',
-    'past_complaint', 'complaint_status', 'feedback'
+    'used_special_discount', 'offer_application_preference', 'feedback'
 ]
 numerical_columns = [
     'age', 'days_since_last_login', 'avg_time_spent',
@@ -222,6 +231,7 @@ print(f"\nDuplicate rows after cleaning: {df_clean.duplicated().sum()}")
 # %%
 target_summary = display_target_summary(df_clean, target)
 print(f"\nOverall churn rate: {df_clean[target].mean():.2%}")
+print("\nNote: The target is treated as binary classification because churn_risk_score is encoded as 0/1 in this dataset.")
 
 # %%
 subsection_title("Feature Inspection")
@@ -258,6 +268,7 @@ print(f"Date parsing complete. Missing values in last_visit_hour: {df_clean['las
 section_title("Feature Engineering")
 
 # Tenure
+# Use the latest observed joining_date as a proxy snapshot reference date
 reference_date = df_clean['joining_date'].max()
 df_clean['tenure_days'] = (reference_date - df_clean['joining_date']).dt.days
 
@@ -276,7 +287,6 @@ df_clean['had_complaint'] = (df_clean['past_complaint'] == 'Yes').astype(int)
 df_clean['complaint_unresolved'] = (
     df_clean['complaint_status'].isin(['Unsolved', 'No Information Available'])
 ).astype(int)
-df_clean['complaint_severity'] = df_clean['complaint_unresolved'] * df_clean['had_complaint']
 
 # Cohort
 df_clean['joining_month'] = df_clean['joining_date'].dt.to_period('M')
@@ -290,11 +300,13 @@ print("  • tenure_days: customer lifetime from joining_date")
 print("  • engagement_score: avg_time_spent × avg_frequency_login_days")
 print("  • value_per_login: transaction value per login day")
 print("  • last_visit_hour: hour of day (behavioural signal)")
-print("  • had_complaint, complaint_unresolved, complaint_severity")
+print("  • had_complaint, complaint_unresolved (replacing raw complaint columns)")
 print("  • joining_month (cohort), tenure_bin (analysis only)")
 
-print("\ncomplaint_severity distribution:")
-print(df_clean['complaint_severity'].value_counts())
+print("\nhad_complaint distribution:")
+print(df_clean['had_complaint'].value_counts())
+print("\ncomplaint_unresolved distribution:")
+print(df_clean['complaint_unresolved'].value_counts())
 
 # %% [markdown]
 # ## 6. Exploratory Data Analysis
@@ -328,7 +340,9 @@ wedges, texts, autotexts = axes[1].pie(
     wedgeprops={'width': 0.55, 'edgecolor': 'white', 'linewidth': 2.5}
 )
 for at in autotexts:
-    at.set_fontsize(12); at.set_fontweight('bold'); at.set_color('white')
+    at.set_fontsize(12)
+    at.set_fontweight('bold')
+    at.set_color('white')
 axes[1].set_title(f'Churn Rate: {churn_rate:.1%}', pad=10, fontsize=13, fontweight='bold')
 
 plt.tight_layout()
@@ -492,7 +506,7 @@ numerical_features_model = numerical_columns + [
     'tenure_days', 'engagement_score', 'value_per_login', 'last_visit_hour'
 ]
 # Binary complaint features — no encoding needed
-passthrough_features = ['had_complaint', 'complaint_unresolved', 'complaint_severity']
+passthrough_features = ['had_complaint', 'complaint_unresolved']
 
 X = df_model.drop(columns=[target])
 y = df_model[target]
@@ -679,8 +693,8 @@ best_pipeline = candidates[best_model_name]
 
 print(f"Selected model: {best_model_name}")
 print(f"CV F1 mean: {cv_summary.loc[best_model_name, 'cv_f1_mean']:.4f}")
-print(f"Rationale: highest mean F1 across 5 stratified folds on training data")
-print(f"\nFitting selected model on full training set...")
+print("Rationale: highest mean F1 across 5 stratified folds on training data")
+print("\nFitting selected model on full training set...")
 
 best_pipeline.fit(X_train, y_train)
 print("Done.")
@@ -870,11 +884,11 @@ for i, feature in enumerate(top_features[:5], 1):
 
 print("\n2. HIGH-RISK CUSTOMER SEGMENTS:")
 print("-" * 80)
-print("   • Customers with unresolved complaint signals (complaint_unresolved = 1)")
-print("   • Customers with high days_since_last_login (inactive users)")
-print("   • Customers with low engagement_score (low activity)")
-print("   • Customers with low avg_time_spent on platform")
-print("   • Certain membership categories show higher churn rates")
+print("   • Customers in higher-risk membership categories")
+print("   • Customers with lower points_in_wallet balances")
+print("   • Customers with lower transaction value signals")
+print("   • Customers showing disengagement patterns (low activity, infrequent logins)")
+print("   • Complaint-related signals may provide additional prioritisation support")
 
 print("\n3. ACTIONABLE RECOMMENDATIONS:")
 print("-" * 80)
