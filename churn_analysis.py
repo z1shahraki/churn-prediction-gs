@@ -53,6 +53,60 @@ def style_ax(ax, title=None, xlabel=None, ylabel=None):
     if ylabel: ax.set_ylabel(ylabel)
     ax.tick_params(length=0)
 
+# ───────────────────────────────────────────────────────────────────────────────
+# Professional Notebook Reporting Helpers
+# ───────────────────────────────────────────────────────────────────────────────
+
+def section_title(title: str) -> None:
+    """Print a major section header."""
+    line = "=" * 88
+    print(f"\n{line}\n{title.upper()}\n{line}")
+
+def subsection_title(title: str) -> None:
+    """Print a subsection header."""
+    print(f"\n{title}\n" + "-" * len(title))
+
+def metric_block(title: str, metrics: dict) -> None:
+    """Display a clean block of metrics."""
+    print(f"\n{title}")
+    print("-" * len(title))
+    for key, value in metrics.items():
+        if isinstance(value, float):
+            print(f"{key:<20}: {value:.4f}")
+        else:
+            print(f"{key:<20}: {value}")
+
+def display_missing_summary(data: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+    """Display top N columns with missing values."""
+    summary = (
+        data.isnull().sum()
+        .rename('missing_count')
+        .to_frame()
+        .assign(missing_pct=lambda x: x['missing_count'] / len(data))
+        .sort_values(['missing_count', 'missing_pct'], ascending=False)
+        .head(top_n)
+    )
+    print("\nTop Missingness Summary")
+    print(summary)
+    return summary
+
+def display_shape_summary(data: pd.DataFrame, name: str = 'Dataset') -> None:
+    """Display dataset shape in a clean format."""
+    print(f"{name}: {data.shape[0]:,} rows, {data.shape[1]:,} columns")
+
+def display_target_summary(data: pd.DataFrame, target_col: str) -> pd.DataFrame:
+    """Display target variable distribution."""
+    summary = (
+        data[target_col]
+        .value_counts(dropna=False)
+        .rename_axis(target_col)
+        .reset_index(name='count')
+    )
+    summary['pct'] = summary['count'] / summary['count'].sum()
+    print(f"\nTarget Summary: {target_col}")
+    print(summary)
+    return summary
+
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
@@ -66,13 +120,15 @@ from sklearn.metrics import (
     f1_score, precision_score, recall_score, roc_auc_score
 )
 from sklearn.inspection import permutation_importance
+from xgboost import XGBClassifier
 
 warnings.filterwarnings('ignore')
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', 120)
 np.random.seed(42)
 
-print("Environment setup complete")
+section_title("Environment Setup")
+print("All libraries and configurations loaded successfully.")
 
 # %% [markdown]
 # ## 2. Load Data
@@ -81,10 +137,10 @@ print("Environment setup complete")
 data_path = '/mnt/d/GreenJourney/DataScienceProjects/churn-prediction-gs/data/churn.csv'
 df = pd.read_csv(data_path)
 
-print("Dataset loaded successfully")
-print(f"\nShape: {df.shape}")
-print("\nFirst few rows:")
-print(df.head())
+section_title("Data Loading")
+display_shape_summary(df, "Raw dataset")
+print("\nPreview:")
+display(df.head())
 
 # %% [markdown]
 # ### Data Quality Cleaning
@@ -114,23 +170,28 @@ df_clean['days_since_last_login'] = df_clean['days_since_last_login'].replace(-9
 df_clean.loc[df_clean['avg_time_spent'] < 0, 'avg_time_spent'] = np.nan
 df_clean.loc[df_clean['points_in_wallet'] < 0, 'points_in_wallet'] = np.nan
 
-print("Data cleaning applied")
-print("\nPost-cleaning missing values:")
-print(df_clean.isnull().sum().sort_values(ascending=False))
-print("\nCheck numeric ranges:")
-print(df_clean[numeric_cols].describe())
+section_title("Data Quality Review")
+print("Data cleaning applied: placeholders replaced, sentinel values fixed, negatives removed.")
+display_shape_summary(df_clean, "Cleaned dataset")
+missing_summary = display_missing_summary(df_clean, top_n=12)
+
+print("\nNumeric Feature Summary After Cleaning:")
+display(df_clean[numeric_cols].describe().T)
 
 # %%
+subsection_title("Data Types and Statistics")
 print("\nData types after cleaning:")
-print(df_clean.dtypes)
+display(df_clean.dtypes.to_frame("dtype"))
 
 print("\nBasic statistics after cleaning:")
-print(df_clean.describe())
+display(df_clean.describe().T)
 
 # %% [markdown]
 # ## 3. Data Understanding and Quality Checks
 
 # %%
+section_title("Data Schema")
+
 # Identify column types
 id_columns = ['Unnamed: 0', 'security_no', 'referral_id']
 date_columns = ['joining_date', 'last_visit_time']
@@ -146,23 +207,24 @@ numerical_columns = [
 ]
 target = 'churn_risk_score'
 
-print("Column categorization:")
-print(f"ID columns: {id_columns}")
-print(f"Date columns: {date_columns}")
-print(f"Categorical columns: {len(categorical_columns)} columns")
-print(f"Numerical columns: {len(numerical_columns)} columns")
-print(f"Target: {target}")
+metric_block("Column Categorization", {
+    "ID columns": len(id_columns),
+    "Date columns": len(date_columns),
+    "Categorical columns": len(categorical_columns),
+    "Numerical columns": len(numerical_columns),
+    "Target variable": target
+})
 
 # %%
+subsection_title("Data Quality Checks")
 print(f"\nDuplicate rows after cleaning: {df_clean.duplicated().sum()}")
 
 # %%
-print("\nTarget distribution:")
-print(df[target].value_counts())
-print(f"\nChurn rate: {df[target].mean():.2%}")
+target_summary = display_target_summary(df_clean, target)
+print(f"\nOverall churn rate: {df_clean[target].mean():.2%}")
 
 # %%
-# Inspect last_visit_time and complaint_status before feature engineering
+subsection_title("Feature Inspection")
 print("\nlast_visit_time sample values:")
 print(df_clean['last_visit_time'].head(10).tolist())
 
@@ -176,6 +238,8 @@ print(df_clean['past_complaint'].value_counts())
 # ## 4. Data Preprocessing
 
 # %%
+section_title("Data Preprocessing")
+
 # Parse joining_date as a full datetime (used for tenure calculation)
 df_clean['joining_date'] = pd.to_datetime(df_clean['joining_date'], errors='coerce')
 
@@ -185,12 +249,14 @@ df_clean['last_visit_hour'] = pd.to_datetime(
     df_clean['last_visit_time'], format='%H:%M:%S', errors='coerce'
 ).dt.hour
 
-print("Missing values in last_visit_hour:", df_clean['last_visit_hour'].isnull().sum())
+print(f"Date parsing complete. Missing values in last_visit_hour: {df_clean['last_visit_hour'].isnull().sum()}")
 
 # %% [markdown]
 # ## 5. Feature Engineering
 
 # %%
+section_title("Feature Engineering")
+
 # Tenure
 reference_date = df_clean['joining_date'].max()
 df_clean['tenure_days'] = (reference_date - df_clean['joining_date']).dt.days
@@ -218,11 +284,14 @@ df_clean['joining_month'] = df_clean['joining_date'].dt.to_period('M')
 # Tenure bins for analysis
 df_clean['tenure_bin'] = pd.cut(df_clean['tenure_days'], bins=5)
 
-print("Feature engineering complete")
-print("\nEngineered features:")
-print("- tenure_days, engagement_score, value_per_login, last_visit_hour")
-print("- had_complaint, complaint_unresolved, complaint_severity")
-print("- joining_month (cohort), tenure_bin")
+subsection_title("Engineered Features Summary")
+print("Created features:")
+print("  • tenure_days: customer lifetime from joining_date")
+print("  • engagement_score: avg_time_spent × avg_frequency_login_days")
+print("  • value_per_login: transaction value per login day")
+print("  • last_visit_hour: hour of day (behavioural signal)")
+print("  • had_complaint, complaint_unresolved, complaint_severity")
+print("  • joining_month (cohort), tenure_bin (analysis only)")
 
 print("\ncomplaint_severity distribution:")
 print(df_clean['complaint_severity'].value_counts())
@@ -231,6 +300,9 @@ print(df_clean['complaint_severity'].value_counts())
 # ## 6. Exploratory Data Analysis
 #
 # Note: Cohort analysis reflects churn by acquisition cohort, not actual churn timing.
+
+# %%
+section_title("Exploratory Data Analysis")
 
 # %%
 # ── Chart 1: Target distribution ────────────────────────────────────────────────
@@ -264,16 +336,60 @@ plt.show()
 print(f"No Churn: {counts[0]:,}  |  Churn: {counts[1]:,}  |  Ratio: {counts[0]/counts[1]:.2f}:1")
 
 # %%
-# ── Cohort Analysis: Churn rate by acquisition month ──────────────────────────
-cohort_churn = df_clean.groupby('joining_month')[target].mean()
+# ───────────────────────────────────────────────────────────────────────────────
+# Temporal Trend Analysis
+# ───────────────────────────────────────────────────────────────────────────────
 
-fig, ax = plt.subplots(figsize=(12, 5))
-cohort_churn.plot(marker='o', ax=ax, color=ACCENTS[4])
-style_ax(ax, 'Churn Rate by Customer Acquisition Cohort', 'Joining Month', 'Churn Rate')
-ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f'{v:.0%}'))
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.show()
+def plot_monthly_churn_trend(data: pd.DataFrame,
+                             date_col: str = 'joining_date',
+                             target_col: str = 'churn_risk_score') -> pd.DataFrame:
+    """
+    Plot monthly churn trend based on joining_date.
+    Note: This reflects acquisition-period churn distribution, not churn event timing.
+    """
+    trend_df = data.copy()
+    trend_df['join_year_month'] = trend_df[date_col].dt.to_period('M').dt.to_timestamp()
+
+    monthly = (
+        trend_df.groupby('join_year_month')
+        .agg(
+            churn_rate=(target_col, 'mean'),
+            customer_count=(target_col, 'size')
+        )
+        .reset_index()
+        .sort_values('join_year_month')
+    )
+
+    fig, ax1 = plt.subplots(figsize=(12, 5))
+
+    ax1.plot(
+        monthly['join_year_month'],
+        monthly['churn_rate'],
+        marker='o',
+        linewidth=2.2,
+        color=ACCENTS[4],
+        markersize=6
+    )
+    ax1.yaxis.set_major_formatter(mticker.PercentFormatter(1.0))
+    style_ax(ax1, 'Monthly Churn Trend by Joining Month', 'Joining Month', 'Churn Rate')
+
+    for x, y in zip(monthly['join_year_month'], monthly['churn_rate']):
+        ax1.annotate(f'{y:.1%}', (x, y), textcoords='offset points', xytext=(0, 7),
+                     ha='center', fontsize=8)
+
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+    return monthly
+
+monthly_trend_df = plot_monthly_churn_trend(df_clean)
+
+print(
+    "\nInterpretation: This chart shows how churn label prevalence varies across customer "
+    "joining months. It is useful for checking broad temporal patterns or cohort shifts, "
+    "but it should not be interpreted as the exact timing of churn events."
+)
 
 # %%
 # ── Tenure Analysis ────────────────────────────────────────────────────────────
@@ -300,7 +416,7 @@ cat_features = [
 ]
 
 fig, axes = plt.subplots(2, 2, figsize=(15, 11))
-fig.suptitle('Churn Rate by Key Categorical Features', fontsize=15, fontweight='bold')
+fig.suptitle('Churn Patterns Across Key Customer Segments', fontsize=15, fontweight='bold')
 
 for ax, (col, title) in zip(axes.flat, cat_features):
     churn_rate_by_cat = (
@@ -328,7 +444,7 @@ plot_df = df_clean[engineered_numerical + [target]].copy()
 plot_df[target] = plot_df[target].map({0: 'No Churn', 1: 'Churn'})
 
 fig, axes = plt.subplots(2, 3, figsize=(16, 9))
-fig.suptitle('Numerical Feature Distributions by Churn Status', fontsize=15, fontweight='bold')
+fig.suptitle('Distribution of Core Numeric Drivers by Churn Status', fontsize=15, fontweight='bold')
 
 for ax, col in zip(axes.flat, engineered_numerical):
     sns.violinplot(data=plot_df, x=target, y=col, palette=COLORS,
@@ -464,6 +580,30 @@ gb_pipeline = Pipeline([
     ))
 ])
 
+# %% [markdown]
+# ### XGBoost Benchmark
+#
+# XGBoost is included as an additional benchmark because this is a structured tabular dataset,
+# and gradient-boosted tree ensembles often perform strongly on this type of problem.
+# It is used here to test whether a more flexible boosting model improves predictive performance
+# beyond Random Forest and standard Gradient Boosting, while remaining interpretable enough
+# for a business-facing churn use case.
+
+# %%
+xgb_pipeline = Pipeline([
+    ('preprocessor', tree_preprocessor),
+    ('model', XGBClassifier(
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+        eval_metric='logloss',
+        n_jobs=-1
+    ))
+])
+
 print("Pipelines defined")
 
 # %%
@@ -487,6 +627,7 @@ candidates = {
     'Logistic Regression': lr_pipeline,
     'Random Forest': rf_pipeline,
     'Gradient Boosting': gb_pipeline,
+    'XGBoost': xgb_pipeline,
 }
 
 cv_results = {}
@@ -504,7 +645,7 @@ cv_summary = pd.DataFrame({
 }).T
 
 print("\nCross-validation summary:")
-print(cv_summary)
+display(cv_summary)
 
 # ── Chart 5: CV comparison ─────────────────────────────────────────────────────────
 fig, ax = plt.subplots(figsize=(9, 5))
@@ -813,24 +954,27 @@ print("   • Avoid discriminatory patterns in model predictions")
 print("   • Regular bias audits across customer segments")
 
 print("\n" + "="*80)
-print("ANALYSIS COMPLETE")
+print("FINAL SUMMARY AND BUSINESS READOUT")
 print("="*80)
-print(f"\nSelected model:  {best_model_name}")
-print(f"CV F1 (mean):    {cv_summary.loc[best_model_name, 'cv_f1_mean']:.4f}")
-print(f"Test F1:         {final_metrics['f1']:.4f}")
-print(f"Test Recall:     {final_metrics['recall']:.4f}")
-print(f"Test ROC-AUC:    {final_metrics['roc_auc']:.4f}")
+
+metric_block("Model Performance Summary", {
+    "Selected model": best_model_name,
+    "CV F1 (mean)": cv_summary.loc[best_model_name, 'cv_f1_mean'],
+    "Test F1": final_metrics['f1'],
+    "Test Recall": final_metrics['recall'],
+    "Test ROC-AUC": final_metrics['roc_auc']
+})
 print("\nThis model shows strong predictive signal, but requires validation on "
       "out-of-time data and refined data quality checks before production use.")
 
 # %%
-print("\nLIMITATIONS:")
-print("-" * 80)
+subsection_title("Limitations and Caveats")
 print("- Data contains placeholder values ('?', 'xxxxxxx') treated as missing")
 print("- Sentinel value -999 found in days_since_last_login; replaced with NaN")
 print("- No explicit churn timestamp available; churn_risk_score indicates churn likelihood, not actual churn timing")
 print("- Time-based (out-of-time) validation not possible with this static dataset")
 print("- Some features may act as proxies rather than causal drivers")
 print("- complaint_status values may vary in production; complaint features built defensively")
+print("- All model features should be confirmed as available at scoring time in production workflows")
 
 # %%
