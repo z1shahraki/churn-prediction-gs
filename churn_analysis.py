@@ -17,8 +17,41 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import seaborn as sns
+from sklearn.metrics import roc_curve
 import warnings
+
+# ── Global plot style ────────────────────────────────────────────────────────
+PALETTE  = {'no_churn': '#2D6A4F', 'churn': '#D62828'}
+COLORS   = [PALETTE['no_churn'], PALETTE['churn']]
+ACCENTS  = ['#264653', '#2A9D8F', '#E9C46A', '#F4A261', '#E76F51']
+BG       = '#F8F9FA'
+GRID_CLR = '#DEE2E6'
+
+sns.set_theme(style='whitegrid', font='DejaVu Sans')
+plt.rcParams.update({
+    'figure.facecolor':  BG,
+    'axes.facecolor':    BG,
+    'axes.edgecolor':    GRID_CLR,
+    'grid.color':        GRID_CLR,
+    'grid.linewidth':    0.6,
+    'axes.spines.top':   False,
+    'axes.spines.right': False,
+    'axes.titlesize':    13,
+    'axes.titleweight':  'bold',
+    'axes.labelsize':    11,
+    'xtick.labelsize':   10,
+    'ytick.labelsize':   10,
+    'legend.fontsize':   10,
+    'figure.dpi':        120,
+})
+
+def style_ax(ax, title=None, xlabel=None, ylabel=None):
+    if title:  ax.set_title(title, pad=10)
+    if xlabel: ax.set_xlabel(xlabel)
+    if ylabel: ax.set_ylabel(ylabel)
+    ax.tick_params(length=0)
 
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -27,6 +60,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.dummy import DummyClassifier
 from sklearn.metrics import (
     classification_report, confusion_matrix,
     f1_score, precision_score, recall_score, roc_auc_score
@@ -52,15 +86,46 @@ print(f"\nShape: {df.shape}")
 print("\nFirst few rows:")
 print(df.head())
 
+# %% [markdown]
+# ### Data Quality Cleaning
+# Replace placeholder strings, fix sentinel values, and remove impossible negatives.
+
 # %%
-print("\nData types:")
-print(df.dtypes)
+df_clean = df.copy()
 
-print("\nMissing values:")
-print(df.isnull().sum())
+# 1. Replace placeholder strings with NaN
+placeholder_values = ['?', 'Unknown', 'unknown', 'NA', 'N/A', 'xxxxxxx', '']
+for col in df_clean.columns:
+    if df_clean[col].dtype == 'object':
+        df_clean[col] = df_clean[col].replace(placeholder_values, np.nan)
 
-print("\nBasic statistics:")
-print(df.describe())
+# 2. Convert numeric columns safely
+numeric_cols = [
+    'age', 'days_since_last_login', 'avg_time_spent',
+    'avg_transaction_value', 'avg_frequency_login_days', 'points_in_wallet'
+]
+for col in numeric_cols:
+    df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
+
+# 3. Fix sentinel values
+df_clean['days_since_last_login'] = df_clean['days_since_last_login'].replace(-999, np.nan)
+
+# 4. Remove impossible negative values
+df_clean.loc[df_clean['avg_time_spent'] < 0, 'avg_time_spent'] = np.nan
+df_clean.loc[df_clean['points_in_wallet'] < 0, 'points_in_wallet'] = np.nan
+
+print("Data cleaning applied")
+print("\nPost-cleaning missing values:")
+print(df_clean.isnull().sum().sort_values(ascending=False))
+print("\nCheck numeric ranges:")
+print(df_clean[numeric_cols].describe())
+
+# %%
+print("\nData types after cleaning:")
+print(df_clean.dtypes)
+
+print("\nBasic statistics after cleaning:")
+print(df_clean.describe())
 
 # %% [markdown]
 # ## 3. Data Understanding and Quality Checks
@@ -89,7 +154,7 @@ print(f"Numerical columns: {len(numerical_columns)} columns")
 print(f"Target: {target}")
 
 # %%
-print(f"\nDuplicate rows: {df.duplicated().sum()}")
+print(f"\nDuplicate rows after cleaning: {df_clean.duplicated().sum()}")
 
 # %%
 print("\nTarget distribution:")
@@ -99,157 +164,201 @@ print(f"\nChurn rate: {df[target].mean():.2%}")
 # %%
 # Inspect last_visit_time and complaint_status before feature engineering
 print("\nlast_visit_time sample values:")
-print(df['last_visit_time'].head(10).tolist())
+print(df_clean['last_visit_time'].head(10).tolist())
 
 print("\ncomplaint_status value counts:")
-print(df['complaint_status'].value_counts())
+print(df_clean['complaint_status'].value_counts())
 
 print("\npast_complaint value counts:")
-print(df['past_complaint'].value_counts())
+print(df_clean['past_complaint'].value_counts())
 
 # %% [markdown]
 # ## 4. Data Preprocessing
 
 # %%
-df_clean = df.copy()
-
 # Parse joining_date as a full datetime (used for tenure calculation)
 df_clean['joining_date'] = pd.to_datetime(df_clean['joining_date'], errors='coerce')
 
 # NOTE: last_visit_time contains only time-of-day values (HH:MM:SS), not full datetimes.
-# Computing days_since_last_visit from this column would be meaningless.
-# Instead, we extract last_visit_hour as a proxy for behavioural pattern (e.g. off-hours usage).
+# We extract last_visit_hour as a proxy for behavioural pattern (e.g. off-hours usage).
 df_clean['last_visit_hour'] = pd.to_datetime(
     df_clean['last_visit_time'], format='%H:%M:%S', errors='coerce'
 ).dt.hour
 
 print("Missing values in last_visit_hour:", df_clean['last_visit_hour'].isnull().sum())
 
-# Some numerical columns are stored as strings in the CSV — coerce to numeric
-for col in numerical_columns:
-    df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
-
 # %% [markdown]
 # ## 5. Feature Engineering
 
 # %%
-# Reference date for tenure (use max joining_date as proxy for current date)
+# Tenure
 reference_date = df_clean['joining_date'].max()
 df_clean['tenure_days'] = (reference_date - df_clean['joining_date']).dt.days
 
-# Engagement score: product of time spent and login frequency
+# Engagement
 df_clean['engagement_score'] = (
     df_clean['avg_time_spent'] * df_clean['avg_frequency_login_days']
-).fillna(0)
+)
 
-# Transaction value per login day
+# Value intensity
 df_clean['value_per_login'] = (
     df_clean['avg_transaction_value'] / (df_clean['avg_frequency_login_days'] + 1)
 )
 
-# complaint_open flag:
-# Inspection shows complaint_status has exactly two values:
-#   - "Solved in Follow-up"      → complaint was resolved
-#   - "No Information Available" → no resolution recorded; treated as unresolved
-# We flag a customer as having an open complaint only when they have a past complaint
-# AND the status is "No Information Available" (i.e. no resolution on record).
-# "Not Applicable" does not appear in this dataset, so we do not include it.
-df_clean['complaint_open'] = (
-    (df_clean['past_complaint'] == 'Yes') &
-    (df_clean['complaint_status'] == 'No Information Available')
+# Complaint features — robust to all complaint_status values observed in data
+df_clean['had_complaint'] = (df_clean['past_complaint'] == 'Yes').astype(int)
+df_clean['complaint_unresolved'] = (
+    df_clean['complaint_status'].isin(['Unsolved', 'No Information Available'])
 ).astype(int)
+df_clean['complaint_severity'] = df_clean['complaint_unresolved'] * df_clean['had_complaint']
+
+# Cohort
+df_clean['joining_month'] = df_clean['joining_date'].dt.to_period('M')
+
+# Tenure bins for analysis
+df_clean['tenure_bin'] = pd.cut(df_clean['tenure_days'], bins=5)
 
 print("Feature engineering complete")
 print("\nEngineered features:")
-print("- tenure_days: customer lifetime in days from joining_date")
-print("- engagement_score: avg_time_spent x avg_frequency_login_days")
-print("- value_per_login: avg_transaction_value per login day")
-print("- last_visit_hour: hour of day of last visit (time-of-day behavioural signal)")
-print("- complaint_open: past complaint with no resolution on record")
+print("- tenure_days, engagement_score, value_per_login, last_visit_hour")
+print("- had_complaint, complaint_unresolved, complaint_severity")
+print("- joining_month (cohort), tenure_bin")
 
-print("\ncomplaint_open distribution:")
-print(df_clean['complaint_open'].value_counts())
+print("\ncomplaint_severity distribution:")
+print(df_clean['complaint_severity'].value_counts())
 
 # %% [markdown]
 # ## 6. Exploratory Data Analysis
+#
+# Note: Cohort analysis reflects churn by acquisition cohort, not actual churn timing.
 
 # %%
-fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+# ── Chart 1: Target distribution ────────────────────────────────────────────────
+counts     = df_clean[target].value_counts().sort_index()
+labels     = ['No Churn', 'Churn']
+churn_rate = df_clean[target].mean()
 
-df_clean[target].value_counts().plot(kind='bar', ax=ax[0], color=['#2ecc71', '#e74c3c'])
-ax[0].set_title('Churn Distribution (Count)')
-ax[0].set_xlabel('Churn Risk Score')
-ax[0].set_ylabel('Count')
-ax[0].set_xticklabels(['No Churn (0)', 'Churn (1)'], rotation=0)
+fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+fig.suptitle('Customer Churn Overview', fontsize=15, fontweight='bold')
 
-df_clean[target].value_counts(normalize=True).plot(kind='bar', ax=ax[1], color=['#2ecc71', '#e74c3c'])
-ax[1].set_title('Churn Distribution (Proportion)')
-ax[1].set_xlabel('Churn Risk Score')
-ax[1].set_ylabel('Proportion')
-ax[1].set_xticklabels(['No Churn (0)', 'Churn (1)'], rotation=0)
+bars = axes[0].bar(labels, counts.values, color=COLORS, width=0.5,
+                   edgecolor='white', linewidth=1.5)
+for bar, val in zip(bars, counts.values):
+    axes[0].text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 150,
+                 f'{val:,}', ha='center', va='bottom', fontweight='bold', fontsize=11)
+axes[0].yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
+axes[0].set_ylim(0, counts.max() * 1.18)
+style_ax(axes[0], 'Class Distribution', '', 'Number of Customers')
+
+wedges, texts, autotexts = axes[1].pie(
+    counts.values, labels=labels, colors=COLORS,
+    autopct='%1.1f%%', startangle=90, pctdistance=0.75,
+    wedgeprops={'width': 0.55, 'edgecolor': 'white', 'linewidth': 2.5}
+)
+for at in autotexts:
+    at.set_fontsize(12); at.set_fontweight('bold'); at.set_color('white')
+axes[1].set_title(f'Churn Rate: {churn_rate:.1%}', pad=10, fontsize=13, fontweight='bold')
 
 plt.tight_layout()
 plt.show()
-
-print(f"Class imbalance ratio: {df_clean[target].value_counts()[0] / df_clean[target].value_counts()[1]:.2f}:1")
+print(f"No Churn: {counts[0]:,}  |  Churn: {counts[1]:,}  |  Ratio: {counts[0]/counts[1]:.2f}:1")
 
 # %%
-fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+# ── Cohort Analysis: Churn rate by acquisition month ──────────────────────────
+cohort_churn = df_clean.groupby('joining_month')[target].mean()
 
-pd.crosstab(df_clean['membership_category'], df_clean[target], normalize='index').plot(
-    kind='bar', ax=axes[0, 0], color=['#2ecc71', '#e74c3c']
-)
-axes[0, 0].set_title('Churn Rate by Membership Category')
-axes[0, 0].set_ylabel('Proportion')
-axes[0, 0].legend(['No Churn', 'Churn'])
-
-pd.crosstab(df_clean['region_category'], df_clean[target], normalize='index').plot(
-    kind='bar', ax=axes[0, 1], color=['#2ecc71', '#e74c3c']
-)
-axes[0, 1].set_title('Churn Rate by Region')
-axes[0, 1].set_ylabel('Proportion')
-axes[0, 1].legend(['No Churn', 'Churn'])
-
-pd.crosstab(df_clean['past_complaint'], df_clean[target], normalize='index').plot(
-    kind='bar', ax=axes[1, 0], color=['#2ecc71', '#e74c3c']
-)
-axes[1, 0].set_title('Churn Rate by Past Complaint')
-axes[1, 0].set_ylabel('Proportion')
-axes[1, 0].legend(['No Churn', 'Churn'])
-
-pd.crosstab(df_clean['complaint_status'], df_clean[target], normalize='index').plot(
-    kind='bar', ax=axes[1, 1], color=['#2ecc71', '#e74c3c']
-)
-axes[1, 1].set_title('Churn Rate by Complaint Status')
-axes[1, 1].set_ylabel('Proportion')
-axes[1, 1].legend(['No Churn', 'Churn'])
-axes[1, 1].tick_params(axis='x', rotation=45)
-
+fig, ax = plt.subplots(figsize=(12, 5))
+cohort_churn.plot(marker='o', ax=ax, color=ACCENTS[4])
+style_ax(ax, 'Churn Rate by Customer Acquisition Cohort', 'Joining Month', 'Churn Rate')
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f'{v:.0%}'))
+plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
 
 # %%
+# ── Tenure Analysis ────────────────────────────────────────────────────────────
+tenure_churn = df_clean.groupby('tenure_bin')[target].mean()
+
+fig, ax = plt.subplots(figsize=(8, 5))
+tenure_churn.plot(kind='bar', ax=ax, color=ACCENTS[1], edgecolor='white')
+for bar, val in zip(ax.patches, tenure_churn):
+    ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
+            f'{val:.2f}', ha='center', va='bottom', fontsize=9)
+style_ax(ax, 'Churn Rate by Customer Tenure', 'Tenure Bucket', 'Churn Rate')
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f'{v:.0%}'))
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+# %%
+# ── Chart 2: Churn rate by key categorical features (sorted, annotated) ────────
+cat_features = [
+    ('membership_category', 'Membership Category'),
+    ('region_category',     'Region'),
+    ('past_complaint',      'Past Complaint'),
+    ('complaint_status',    'Complaint Status'),
+]
+
+fig, axes = plt.subplots(2, 2, figsize=(15, 11))
+fig.suptitle('Churn Rate by Key Categorical Features', fontsize=15, fontweight='bold')
+
+for ax, (col, title) in zip(axes.flat, cat_features):
+    churn_rate_by_cat = (
+        df_clean.groupby(col)[target].mean().sort_values()
+    )
+    counts_by_cat = df_clean[col].value_counts()
+    bars = churn_rate_by_cat.plot(kind='barh', ax=ax, color=ACCENTS[1], edgecolor='white')
+    for i, (cat, val) in enumerate(churn_rate_by_cat.items()):
+        n = counts_by_cat.get(cat, 0)
+        ax.text(val + 0.005, i, f'{val:.2f} (n={n:,})', va='center', fontsize=8.5)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f'{v:.0%}'))
+    ax.set_xlim(0, churn_rate_by_cat.max() * 1.35)
+    style_ax(ax, title, 'Churn Rate', '')
+
+plt.tight_layout()
+plt.show()
+
+# %%
+# ── Chart 3: Numerical features — violin + box overlay ─────────────────────────
 engineered_numerical = [
     'days_since_last_login', 'avg_time_spent', 'avg_transaction_value',
     'tenure_days', 'engagement_score', 'points_in_wallet'
 ]
+plot_df = df_clean[engineered_numerical + [target]].copy()
+plot_df[target] = plot_df[target].map({0: 'No Churn', 1: 'Churn'})
 
-fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+fig.suptitle('Numerical Feature Distributions by Churn Status', fontsize=15, fontweight='bold')
 
-for idx, col in enumerate(engineered_numerical):
-    row, col_idx = idx // 3, idx % 3
-    df_clean.boxplot(column=col, by=target, ax=axes[row, col_idx])
-    axes[row, col_idx].set_title(f'{col} by Churn')
-    axes[row, col_idx].set_xlabel('Churn Risk Score')
-    plt.sca(axes[row, col_idx])
-    plt.xticks([1, 2], ['No Churn', 'Churn'])
+for ax, col in zip(axes.flat, engineered_numerical):
+    sns.violinplot(data=plot_df, x=target, y=col, palette=COLORS,
+                   order=['No Churn', 'Churn'], inner=None, linewidth=0.8, ax=ax)
+    sns.boxplot(data=plot_df, x=target, y=col, order=['No Churn', 'Churn'],
+                width=0.14, color='white', linewidth=1.2,
+                flierprops={'marker': 'o', 'markersize': 2, 'alpha': 0.4}, ax=ax)
+    style_ax(ax, col.replace('_', ' ').title(), '', '')
 
-plt.suptitle('')
 plt.tight_layout()
 plt.show()
 
 # %%
-correlations = df_clean[engineered_numerical + ['value_per_login', target]].corr()[target].sort_values(ascending=False)
+# ── Chart 4: Correlation heatmap ──────────────────────────────────────────────────
+corr_cols   = engineered_numerical + ['value_per_login', target]
+corr_matrix = df_clean[corr_cols].corr()
+mask        = np.triu(np.ones_like(corr_matrix, dtype=bool))
+
+fig, ax = plt.subplots(figsize=(9, 7))
+sns.heatmap(
+    corr_matrix, mask=mask, annot=True, fmt='.2f', cmap='RdYlGn',
+    center=0, vmin=-1, vmax=1, linewidths=0.5, linecolor='white',
+    annot_kws={'size': 9}, ax=ax, cbar_kws={'shrink': 0.8}
+)
+style_ax(ax, 'Feature Correlation Matrix')
+ax.tick_params(axis='x', rotation=35)
+plt.tight_layout()
+plt.show()
+
+correlations = corr_matrix[target].drop(target).sort_values(ascending=False)
 print("\nCorrelation with churn:")
 print(correlations)
 
@@ -257,19 +366,17 @@ print(correlations)
 # ## 7. Prepare Data for Modeling
 
 # %%
-# Columns dropped: identifiers (no predictive value, leakage risk) and raw date/time columns
-# (joining_date and last_visit_time are replaced by tenure_days and last_visit_hour)
-drop_columns = id_columns + date_columns
+# Drop identifiers, raw date/time columns, and analysis-only columns
+drop_columns = id_columns + date_columns + ['joining_month', 'tenure_bin']
 
 df_model = df_clean.drop(columns=drop_columns)
 
-# Define feature sets for the ColumnTransformer
 # last_visit_hour is treated as numerical (ordinal hour 0-23)
 numerical_features_model = numerical_columns + [
     'tenure_days', 'engagement_score', 'value_per_login', 'last_visit_hour'
 ]
-# complaint_open is already binary (0/1), no encoding needed
-passthrough_features = ['complaint_open']
+# Binary complaint features — no encoding needed
+passthrough_features = ['had_complaint', 'complaint_unresolved', 'complaint_severity']
 
 X = df_model.drop(columns=[target])
 y = df_model[target]
@@ -359,6 +466,14 @@ gb_pipeline = Pipeline([
 
 print("Pipelines defined")
 
+# %%
+# Baseline model — majority class predictor
+dummy = DummyClassifier(strategy='most_frequent', random_state=42)
+dummy.fit(X_train, y_train)
+y_dummy = dummy.predict(X_test)
+print(f"Baseline (majority class) F1: {f1_score(y_test, y_dummy):.4f}")
+print("(All models must beat this baseline to demonstrate value)")
+
 # %% [markdown]
 # ## 10. Cross-Validation on Training Set
 #
@@ -391,15 +506,23 @@ cv_summary = pd.DataFrame({
 print("\nCross-validation summary:")
 print(cv_summary)
 
-# Visualise CV results with error bars
-fig, ax = plt.subplots(figsize=(8, 5))
+# ── Chart 5: CV comparison ─────────────────────────────────────────────────────────
+fig, ax = plt.subplots(figsize=(9, 5))
 means = cv_summary['cv_f1_mean']
-stds = cv_summary['cv_f1_std']
-ax.bar(means.index, means, yerr=stds, capsize=5, color=['#3498db', '#2ecc71', '#e67e22'])
-ax.set_title('Cross-Validation F1 Score (Training Set)')
-ax.set_ylabel('F1 Score')
-ax.set_ylim(0, 1)
-ax.set_xticklabels(means.index, rotation=15, ha='right')
+stds  = cv_summary['cv_f1_std']
+best  = means.idxmax()
+bar_colors = [ACCENTS[4] if n == best else ACCENTS[1] for n in means.index]
+bars = ax.barh(means.index, means, xerr=stds, color=bar_colors, capsize=5,
+               edgecolor='white', linewidth=1.1, height=0.5,
+               error_kw={'elinewidth': 1.5, 'ecolor': '#555'})
+for bar, val, std in zip(bars, means, stds):
+    ax.text(val + std + 0.003, bar.get_y() + bar.get_height() / 2,
+            f'{val:.4f} ± {std:.4f}', va='center', fontsize=10)
+ax.set_xlim(0.80, 1.02)
+ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f'{v:.2f}'))
+ax.axvline(means.max(), color=ACCENTS[4], linestyle='--', linewidth=1, alpha=0.5)
+ax.invert_yaxis()
+style_ax(ax, '5-Fold Stratified CV — F1 Score (Training Set)', 'Mean F1 Score', '')
 plt.tight_layout()
 plt.show()
 
@@ -451,14 +574,36 @@ def evaluate_model(pipeline, X_tr, X_te, y_tr, y_te, model_name):
     print("\nClassification Report (Test):")
     print(classification_report(y_te, y_test_pred, target_names=['No Churn', 'Churn']))
 
+    # ── Chart 6: Confusion matrix + ROC curve ─────────────────────────────────────
     cm = confusion_matrix(y_te, y_test_pred)
-    plt.figure(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+    fpr, tpr, _ = roc_curve(y_te, y_test_proba)
+    auc_val = roc_auc_score(y_te, y_test_proba)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    fig.suptitle(f'{model_name} — Final Evaluation (Test Set)',
+                 fontsize=14, fontweight='bold')
+
+    # Confusion matrix with counts + row percentages
+    cm_pct = cm.astype(float) / cm.sum(axis=1, keepdims=True) * 100
+    annot  = np.array([[f'{v:,}\n({p:.1f}%)' for v, p in zip(rv, rp)]
+                        for rv, rp in zip(cm, cm_pct)])
+    sns.heatmap(cm, annot=annot, fmt='', cmap='Blues', linewidths=1,
+                linecolor='white', annot_kws={'size': 11},
                 xticklabels=['No Churn', 'Churn'],
-                yticklabels=['No Churn', 'Churn'])
-    plt.title(f'{model_name} — Confusion Matrix (Test Set)')
-    plt.ylabel('Actual')
-    plt.xlabel('Predicted')
+                yticklabels=['No Churn', 'Churn'],
+                ax=axes[0], cbar_kws={'shrink': 0.8})
+    style_ax(axes[0], 'Confusion Matrix', 'Predicted', 'Actual')
+
+    # ROC curve with AUC fill
+    axes[1].plot(fpr, tpr, color=ACCENTS[4], lw=2.5, label=f'AUC = {auc_val:.4f}')
+    axes[1].fill_between(fpr, tpr, alpha=0.08, color=ACCENTS[4])
+    axes[1].plot([0, 1], [0, 1], 'k--', lw=1, alpha=0.4, label='Random')
+    axes[1].set_xlim([-0.01, 1.01])
+    axes[1].set_ylim([-0.01, 1.05])
+    axes[1].legend(loc='lower right', frameon=True)
+    style_ax(axes[1], 'ROC Curve', 'False Positive Rate', 'True Positive Rate')
+
+    plt.tight_layout()
     plt.show()
 
     return {
@@ -470,6 +615,19 @@ def evaluate_model(pipeline, X_tr, X_te, y_tr, y_te, model_name):
 
 # %%
 final_metrics = evaluate_model(best_pipeline, X_train, X_test, y_train, y_test, best_model_name)
+
+# %%
+# ── Threshold tuning ──────────────────────────────────────────────────────────
+# Default threshold (0.5) optimises accuracy; adjust for business intervention capacity.
+y_probs = best_pipeline.predict_proba(X_test)[:, 1]
+
+print("Threshold sensitivity:")
+for threshold in [0.4, 0.5, 0.6]:
+    y_custom = (y_probs > threshold).astype(int)
+    print(f"  threshold={threshold:.1f}  F1={f1_score(y_test, y_custom):.4f}  "
+          f"Precision={precision_score(y_test, y_custom):.4f}  "
+          f"Recall={recall_score(y_test, y_custom):.4f}")
+print("\nNote: threshold is tuned for business intervention capacity.")
 
 # %% [markdown]
 # ## 13. Model Explainability
@@ -491,6 +649,24 @@ except Exception:
 # %%
 inner_model = best_pipeline.named_steps['model']
 
+def _importance_chart(df_imp, value_col, title, xlabel, color):
+    """Reusable professional horizontal importance bar chart."""
+    top = df_imp.head(15).copy()
+    top['label'] = top['feature'].str.replace(r'^[a-z_]+_', '', regex=True)
+    bar_colors = [color if v >= 0 else PALETTE['churn'] for v in top[value_col]]
+    fig, ax = plt.subplots(figsize=(11, 7))
+    bars = ax.barh(top['label'], top[value_col], color=bar_colors,
+                   edgecolor='white', linewidth=0.8)
+    max_val = top[value_col].abs().max()
+    for bar, val in zip(bars, top[value_col]):
+        ax.text(val + max_val * 0.012, bar.get_y() + bar.get_height() / 2,
+                f'{val:.4f}', va='center', fontsize=9)
+    ax.invert_yaxis()
+    ax.axvline(0, color='#888', linewidth=0.8)
+    style_ax(ax, title, xlabel, '')
+    plt.tight_layout()
+    plt.show()
+
 if hasattr(inner_model, 'feature_importances_'):
     feature_importance = pd.DataFrame({
         'feature': all_feature_names,
@@ -499,14 +675,9 @@ if hasattr(inner_model, 'feature_importances_'):
 
     print(f"\nTop 15 Feature Importances ({best_model_name}):")
     print(feature_importance.head(15).to_string(index=False))
-
-    plt.figure(figsize=(10, 8))
-    plt.barh(feature_importance.head(15)['feature'], feature_importance.head(15)['importance'])
-    plt.xlabel('Importance')
-    plt.title(f'{best_model_name} — Top 15 Feature Importances')
-    plt.gca().invert_yaxis()
-    plt.tight_layout()
-    plt.show()
+    _importance_chart(feature_importance, 'importance',
+                      f'{best_model_name} — Top 15 Feature Importances',
+                      'Gini Importance', ACCENTS[1])
 
 elif hasattr(inner_model, 'coef_'):
     feature_importance = pd.DataFrame({
@@ -516,14 +687,9 @@ elif hasattr(inner_model, 'coef_'):
 
     print(f"\nTop 15 Feature Coefficients ({best_model_name}):")
     print(feature_importance.head(15).to_string(index=False))
-
-    plt.figure(figsize=(10, 8))
-    plt.barh(feature_importance.head(15)['feature'], feature_importance.head(15)['coefficient'])
-    plt.xlabel('Coefficient')
-    plt.title(f'{best_model_name} — Top 15 Feature Coefficients')
-    plt.gca().invert_yaxis()
-    plt.tight_layout()
-    plt.show()
+    _importance_chart(feature_importance, 'coefficient',
+                      f'{best_model_name} — Top 15 Feature Coefficients',
+                      'Coefficient', ACCENTS[1])
 
 # %%
 # Permutation importance on the test set (model-agnostic, uses the full pipeline)
@@ -542,14 +708,9 @@ perm_importance_df = pd.DataFrame({
 
 print("\nTop 15 Permutation Importances:")
 print(perm_importance_df.head(15).to_string(index=False))
-
-plt.figure(figsize=(10, 8))
-plt.barh(perm_importance_df.head(15)['feature'], perm_importance_df.head(15)['importance'])
-plt.xlabel('Permutation Importance')
-plt.title('Top 15 Features by Permutation Importance (Test Set)')
-plt.gca().invert_yaxis()
-plt.tight_layout()
-plt.show()
+_importance_chart(perm_importance_df, 'importance',
+                  'Top 15 Features — Permutation Importance (Test Set)',
+                  'Mean Decrease in F1', ACCENTS[0])
 
 # %% [markdown]
 # ## 14. Business Insights and Recommendations
@@ -568,7 +729,7 @@ for i, feature in enumerate(top_features[:5], 1):
 
 print("\n2. HIGH-RISK CUSTOMER SEGMENTS:")
 print("-" * 80)
-print("   • Customers with unresolved complaints (complaint_open = 1)")
+print("   • Customers with unresolved complaint signals (complaint_unresolved = 1)")
 print("   • Customers with high days_since_last_login (inactive users)")
 print("   • Customers with low engagement_score (low activity)")
 print("   • Customers with low avg_time_spent on platform")
@@ -659,6 +820,17 @@ print(f"CV F1 (mean):    {cv_summary.loc[best_model_name, 'cv_f1_mean']:.4f}")
 print(f"Test F1:         {final_metrics['f1']:.4f}")
 print(f"Test Recall:     {final_metrics['recall']:.4f}")
 print(f"Test ROC-AUC:    {final_metrics['roc_auc']:.4f}")
-print("\nThis model is ready for business review and pilot testing.")
+print("\nThis model shows strong predictive signal, but requires validation on "
+      "out-of-time data and refined data quality checks before production use.")
+
+# %%
+print("\nLIMITATIONS:")
+print("-" * 80)
+print("- Data contains placeholder values ('?', 'xxxxxxx') treated as missing")
+print("- Sentinel value -999 found in days_since_last_login; replaced with NaN")
+print("- No explicit churn timestamp available; churn_risk_score indicates churn likelihood, not actual churn timing")
+print("- Time-based (out-of-time) validation not possible with this static dataset")
+print("- Some features may act as proxies rather than causal drivers")
+print("- complaint_status values may vary in production; complaint features built defensively")
 
 # %%
