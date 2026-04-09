@@ -125,6 +125,10 @@ df_clean['last_visit_hour'] = pd.to_datetime(
 
 print("Missing values in last_visit_hour:", df_clean['last_visit_hour'].isnull().sum())
 
+# Some numerical columns are stored as strings in the CSV — coerce to numeric
+for col in numerical_columns:
+    df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
+
 # %% [markdown]
 # ## 5. Feature Engineering
 
