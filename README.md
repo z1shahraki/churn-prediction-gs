@@ -7,7 +7,14 @@ This submission analyses customer churn using the provided dataset and covers tw
 - exploratory analysis to better understand customer retention patterns
 - predictive modelling to estimate churn risk and support proactive intervention
 
-The goal is not only to build a useful model, but also to produce practical insights that can help guide business action.
+The goal is to build a useful model and produce practical insights that can guide business action.
+
+## Selected Model Summary
+
+- Selected model: Gradient Boosting
+- Cross-validated F1: ~0.94
+- Held-out test F1: ~0.94
+- Main predictive themes: membership, wallet points, negative feedback, engagement
 
 ## Files Included
 
@@ -41,7 +48,7 @@ The exploratory analysis showed that:
 - grouped features such as login recency, time spent, wallet points, transaction value, and tenure make churn patterns easier to interpret from a business point of view
 - some groups matter because their churn rate is higher, while others matter because they include more customers
 - membership category, wallet points, transaction value, and feedback-related fields showed the clearest churn differences
-- feedback and membership category show very strong separation in this dataset, so they are useful predictive signals, but should not be interpreted as direct business causes
+- feedback and membership category show very strong separation in this dataset, so they are useful predictive signals, but they should not be interpreted as direct causes of churn
 - transaction value also shows a meaningful pattern, although the exact result depends partly on how value bands are defined
 - data-cleaning decisions materially affect the analysis and should remain clearly documented
 
@@ -96,7 +103,7 @@ The main evaluation metrics were:
 - ROC-AUC
 - Confusion Matrix
 
-Threshold sensitivity was also reviewed to show how precision and recall change under different decision thresholds.
+Threshold sensitivity was also reviewed to show how precision and recall change under different decision thresholds. F1 was prioritised because it balances precision and recall for churn identification.
 
 ### Main Modelling Results
 
@@ -107,6 +114,8 @@ The modelling results were strong and consistent:
 - Logistic Regression remained a useful benchmark and stayed competitive
 - KNN and Gaussian Naive Bayes performed clearly worse, which supports the choice of stronger tabular models
 - train-test gaps were small for the leading models, which supports stability on unseen data
+
+Results snapshot: Gradient Boosting was selected, with cross-validated F1 around 0.94 and held-out test F1 around 0.94.
 
 ### Explainability and Advanced Insights
 
@@ -138,7 +147,7 @@ However, these signals should still be treated as predictive rather than causal.
 - also check whether the result was worth the extra effort and cost
 - if the result is good, expand the approach to a larger group
 
-### What Is Still Needed Before Production Use
+### What Is Still Needed Before Production
 
 Before production rollout, the following would still be needed:
 

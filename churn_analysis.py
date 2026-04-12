@@ -1793,7 +1793,10 @@ def main() -> None:
         "Loyalty or value": [
             feat
             for feat in top_features
-            if any(token in feat for token in ["wallet", "points_in_wallet", "transaction", "value_per_login"])
+            if any(
+                token in feat
+                for token in ["points_in_wallet", "wallet_points_group", "transaction", "value_per_login"]
+            )
         ],
         "Customer experience": [
             feat for feat in top_features if any(token in feat for token in ["feedback", "complaint"])
