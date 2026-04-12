@@ -4,35 +4,37 @@
 
 This submission analyses customer churn using the provided dataset and covers two connected tasks:
 
-- exploratory analysis to better understand customer retention patterns
+- exploratory analysis to understand customer retention patterns
 - predictive modelling to estimate churn risk and support proactive intervention
 
-The goal is to build a useful model and produce practical insights that can guide business action.
+The aim is not only to build a useful predictive model, but also to generate practical insights that can support business decision-making.
 
 ## Selected Model Summary
 
-- Selected model: Gradient Boosting
-- Cross-validated F1: ~0.94
-- Held-out test F1: ~0.94
-- Main predictive themes: membership, wallet points, negative feedback, engagement
+- **Selected model:** Gradient Boosting
+- **Cross-validated F1:** ~0.94
+- **Held-out test F1:** ~0.94
+- **Main predictive themes:** membership, wallet points, negative feedback, and engagement
 
 ## Files Included
 
-- `README.md`, this document
-- `churn_analysis.ipynb`, notebook version of the full analysis
-- `churn_analysis.py`, Python script version of the same workflow
-- `requirements.txt`, Python dependencies needed to run the analysis
-- `data/churn.csv`, dataset file used by both the notebook and script
+- `README.md`, project summary and usage guide
+- `churn_analysis.ipynb`, notebook version of the full workflow
+- `churn_analysis.py`, Python script version of the same analysis
+- `requirements.txt`, project dependencies
+- `data/churn.csv`, dataset used by both the notebook and script
+
+---
 
 ## Exercise 1, Exploratory Analysis and Business Insights
 
 ### Objective
 
-The first part of the work focuses on understanding the dataset, cleaning and preparing it for analysis, and identifying useful patterns related to retention and churn risk.
+The first part of the work focuses on understanding the dataset, cleaning and preparing it for analysis, and identifying meaningful patterns related to churn and retention.
 
 ### What Was Done
 
-The analysis included:
+The exploratory analysis included:
 
 - cleaning placeholder values and missing entries
 - identifying and handling invalid numeric values
@@ -45,8 +47,8 @@ The analysis included:
 The exploratory analysis showed that:
 
 - churn is fairly balanced in this dataset, so standard classification methods are suitable
-- grouped features such as login recency, time spent, wallet points, transaction value, and tenure make churn patterns easier to interpret from a business point of view
-- some groups matter because their churn rate is higher, while others matter because they include more customers
+- grouped features such as login recency, time spent, wallet points, transaction value, and tenure make churn patterns easier to interpret from a business perspective
+- some groups matter because their churn rate is higher, while others matter because they contain a large share of customers
 - membership category, wallet points, transaction value, and feedback-related fields showed the clearest churn differences
 - feedback and membership category show very strong separation in this dataset, so they are useful predictive signals, but they should not be interpreted as direct causes of churn
 - transaction value also shows a meaningful pattern, although the exact result depends partly on how value bands are defined
@@ -55,21 +57,27 @@ The exploratory analysis showed that:
 ### Assumptions and Caveats From the Exploratory Analysis
 
 - the supplied target column, `churn_risk_score`, is treated as the churn label
-- the working dataset behaves as a binary classification problem
+- the working dataset is treated as a binary classification problem
 - this is a static historical dataset, not a full event-time churn timeline
 - some variables may be recorded close to the churn outcome, so interpretation should remain practical rather than causal
+
+---
 
 ## Exercise 2, Predictive Modelling and Advanced Insights
 
 ### Objective
 
-The second part of the work focuses on building a predictive model that estimates whether a customer is likely to leave, and on identifying signals that can help guide business action.
+The second part of the work focuses on building a predictive model that estimates churn risk, and on identifying signals that can help guide business action.
 
 ### Modelling Approach
 
 The modelling workflow included:
 
-- preparation of numeric, grouped categorical, and flag-based features
+- preparation of numeric, categorical, engineered grouped, and flag-based features
+- preprocessing within pipelines to keep modelling steps consistent and leakage-safe
+- median imputation for numeric features
+- a constant `"Missing"` category for categorical features
+- one-hot encoding for categorical variables
 - stratified train-test split
 - stratified cross-validation on the training set
 - comparison of multiple model families
@@ -79,14 +87,14 @@ The modelling workflow included:
 
 ### Models Compared
 
-Main comparison models:
+**Main comparison models**
 
 - Logistic Regression
 - Random Forest
 - Gradient Boosting
 - XGBoost
 
-Secondary baseline models:
+**Secondary baseline models**
 
 - KNN
 - Gaussian Naive Bayes
@@ -111,11 +119,11 @@ The modelling results were strong and consistent:
 
 - Gradient Boosting achieved the best cross-validated F1 among the main models
 - XGBoost and Random Forest also performed strongly
-- Logistic Regression remained a useful benchmark and stayed competitive
+- Logistic Regression remained a useful benchmark, although tree-based models performed better
 - KNN and Gaussian Naive Bayes performed clearly worse, which supports the choice of stronger tabular models
 - train-test gaps were small for the leading models, which supports stability on unseen data
 
-Results snapshot: Gradient Boosting was selected, with cross-validated F1 around 0.94 and held-out test F1 around 0.94.
+**Results snapshot:** Gradient Boosting was selected, with cross-validated F1 around 0.94 and held-out test F1 around 0.94.
 
 ### Explainability and Advanced Insights
 
@@ -130,14 +138,16 @@ These themes appeared in both model-based importance and permutation importance 
 
 However, these signals should still be treated as predictive rather than causal. Some variables may partly reflect dataset structure or information recorded close to the churn outcome.
 
-### Business Recommendations
+---
+
+## Business Recommendations
 
 - follow up quickly with customers who show negative feedback, and review complaint-related signals as supporting context
 - re-engage customers who are becoming less active
 - test retention offers for lower-value customers and customers with lower wallet points
 - review higher-risk membership groups and use different actions for different segments
 
-### How to Test the Model in Practice
+## How to Test the Model in Practice
 
 - choose a small group of customers for a trial
 - use the model to identify customers who appear more likely to leave
@@ -147,15 +157,17 @@ However, these signals should still be treated as predictive rather than causal.
 - also check whether the result was worth the extra effort and cost
 - if the result is good, expand the approach to a larger group
 
-### What Is Still Needed Before Production
+## What Is Still Needed Before Production
 
-Before production rollout, the following would still be needed:
+Before wider operational rollout, the following would still be needed:
 
 - confirm that all required features are available at scoring time in real workflows
 - automate data refresh and scoring
 - connect outputs to CRM or operational workflows
 - monitor drift, missing data, and model performance over time
 - validate the model on future data, not only historical holdout data
+
+---
 
 ## Key Assumptions and Limitations
 
@@ -165,6 +177,8 @@ Before production rollout, the following would still be needed:
 - some variables, especially complaint and feedback-related fields, may be close to the outcome timing
 - feature importance is predictive, not causal
 - further validation is required before wider operational use
+
+---
 
 ## Environment Setup
 
@@ -200,7 +214,7 @@ python churn_analysis.py
 jupyter notebook churn_analysis.ipynb
 ```
 
-Then open the notebook and run cells in order.
+Then open the notebook and run the cells in order.
 
 ## Reproducibility Notes
 
