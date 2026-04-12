@@ -3,7 +3,7 @@
 This script combines exploratory analysis and predictive modelling to answer two
 core business questions:
 1. What patterns in the data help explain customer churn and retention?
-2. Which customers appear most at risk of churn, and what practical actions do
+2. Which customers are at risk of churn, and what practical actions do
    the results suggest?
 
 The workflow is presentation-ready as a standard Python script while preserving
@@ -489,6 +489,24 @@ def main() -> None:
         numeric_cols + [target],
         "Initial Correlation Heatmap for Core Numeric Variables",
     )
+    display(
+        Markdown(
+            """
+**Quick interpretation of numeric distributions:**  
+Age is spread fairly evenly across its range, while average time spent is strongly right-skewed.  
+Average transaction value shows a wide range with a thinner high-value tail, and average frequency login days is more concentrated in the lower-to-mid range with a smaller upper tail.  
+Wallet points are more concentrated around a central band. These patterns support keeping raw numeric features for modelling while also creating grouped versions for clearer business interpretation.
+"""
+        )
+    )
+    display(
+        Markdown(
+            """
+**Initial correlation note:**  
+The strongest raw linear relationships with churn appear in wallet points, average transaction value, and average frequency login days, while the other numeric features show much weaker pairwise correlations.
+"""
+        )
+    )
 
     # 2.4 Categorical Audit
 
@@ -773,7 +791,7 @@ def main() -> None:
     # 2.6 Exploratory Analysis
     #
     # The grouped summaries below show both conditional churn rates within each segment and each segment's
-    # contribution to total churners. These answer different questions and should be interpreted together.
+    # contribution to total customers who churn. These answer different questions and should be interpreted together.
 
     section_title("Exploratory Analysis")
 
@@ -975,7 +993,7 @@ def main() -> None:
 
     print(
         "\nNote: `within_group_churn_rate` is the churn rate inside a segment, while "
-        "`share_of_total_churners` shows how much that segment contributes to all churners. "
+        "`share_of_total_churners` shows how much that segment contributes to all customers who churn. "
         "Within-group churn rates do not sum to 1 because they are conditional rates, not shares of the full dataset."
     )
 
@@ -1045,11 +1063,23 @@ def main() -> None:
     #
     # Main modelling decisions:
     #
-    # Problem type: binary classification, using the supplied target
-    # Features: raw numeric variables retained for predictive strength, grouped variables added for interpretability
-    # Validation: stratified train-test split and stratified cross-validation on the training set
-    # Metrics: F1, confusion matrix, precision, recall, and ROC-AUC
-    # Explainability: feature importance where available, plus permutation importance for model-agnostic interpretation
+    # Problem type: binary classification using the supplied churn target.
+    # Feature design: the modelling dataset includes raw numeric variables, categorical variables,
+    # missing-value flags, and selected engineered business-friendly features. Raw numeric variables
+    # were retained to preserve predictive signal, while grouped features were added to improve
+    # business interpretation.
+    # Missing-value handling: non-standard missing entries and invalid placeholders were first
+    # standardised during data cleaning. In modelling, missing numeric values were imputed with
+    # the median, while categorical missing values were retained through a constant "Missing"
+    # category so incomplete records could still be used consistently.
+    # Categorical treatment: categorical variables were retained in the modelling dataset and
+    # encoded using one-hot encoding within the preprocessing pipeline.
+    # Validation: a stratified train-test split was used to preserve class balance, and stratified
+    # cross-validation was applied on the training set to support more reliable model comparison.
+    # Evaluation metrics: F1 was treated as a key metric, supported by precision, recall,
+    # confusion matrix, and ROC-AUC to provide a balanced view of model performance.
+    # Explainability: model-specific feature importance was used where available, alongside
+    # permutation importance for model-agnostic interpretation.
 
     section_title("Exercise 2 - Prepare Data for Modelling")
 
@@ -1757,6 +1787,7 @@ def main() -> None:
         n_repeats=10,
         random_state=42,
         n_jobs=-1,
+        scoring="f1",
     )
 
     perm_importance_df = pd.DataFrame(
@@ -1865,12 +1896,12 @@ def main() -> None:
             {
                 "Metric": "Recall",
                 "Value": final_metrics["recall"],
-                "Interpretation": "Share of churners identified",
+                "Interpretation": "Share of customers who churn identified",
             },
             {
                 "Metric": "Precision",
                 "Value": final_metrics["precision"],
-                "Interpretation": "Share of flagged customers who are true churners",
+                "Interpretation": "Share of flagged customers who are true churn customers",
             },
         ]
     )
