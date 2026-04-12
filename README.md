@@ -1,173 +1,215 @@
-# Customer Churn Prediction and Analysis
+# Customer Churn Analysis
 
 ## Overview
 
-This project focuses on identifying customers at risk of churn using behavioural, transactional, and engagement data.
+This submission analyses customer churn using the provided dataset and covers two connected tasks:
 
-The problem is treated as a **binary classification task**, where the target variable represents whether a customer is at risk of churn (1) or not (0). The goal is not only to achieve strong predictive performance but also to extract **actionable business insights**.
+- exploratory analysis to better understand customer retention patterns
+- predictive modelling to estimate churn risk and support proactive intervention
 
----
+The goal is not only to build a useful model, but also to produce practical insights that can help guide business action.
 
-## 📊 Project Workflow
+## Files Included
 
-The solution follows a structured end-to-end pipeline, starting from data preparation and feature engineering through to modelling, evaluation, and business recommendations.
+- `README.md`, this document
+- `churn_analysis.ipynb`, notebook version of the full analysis
+- `churn_analysis.py`, Python script version of the same workflow
+- `requirements.txt`, Python dependencies needed to run the analysis
+- `data/churn.csv`, dataset file used by both the notebook and script
 
-![Churn Workflow](./images/workflow.png)
+## Exercise 1, Exploratory Analysis and Business Insights
 
-<p align="center"><i>End-to-end churn prediction workflow</i></p>
+### Objective
 
-Key stages include:
-- Data cleaning and validation to ensure reliable inputs  
-- Feature engineering capturing behavioural and transactional signals  
-- Exploratory analysis to understand customer segments and trends  
-- Model development and benchmarking across multiple algorithms  
-- Evaluation using classification metrics and threshold analysis  
-- Translation of model outputs into business recommendations  
+The first part of the work focuses on understanding the dataset, cleaning and preparing it for analysis, and identifying useful patterns related to retention and churn risk.
 
----
+### What Was Done
 
-## ⚙️ Approach
+The analysis included:
 
-### Data Preparation
-- Handling missing values and placeholder entries  
-- Cleaning invalid or inconsistent numeric values  
-- Validating data ranges and distributions  
+- cleaning placeholder values and missing entries
+- identifying and handling invalid numeric values
+- reviewing data structure, distributions, and categorical values
+- engineering grouped features to make patterns easier to interpret
+- visualising churn patterns across customer segments, value bands, engagement signals, cohorts, and tenure
 
-### Feature Engineering
-- Behavioural features such as engagement and login patterns  
-- Transaction-based features including wallet balance and value per activity  
-- Complaint-related features capturing customer experience signals  
-- Tenure and cohort-based features  
+### Main Findings
 
-### Exploratory Analysis
-- Churn patterns across customer segments  
-- Cohort and tenure analysis  
-- Distribution of key numeric drivers  
+The exploratory analysis showed that:
 
-### Modelling
-The problem is approached using multiple machine learning models:
+- churn is fairly balanced in this dataset, so standard classification methods are suitable
+- grouped features such as login recency, time spent, wallet points, transaction value, and tenure make churn patterns easier to interpret from a business point of view
+- some groups matter because their churn rate is higher, while others matter because they include more customers
+- membership category, wallet points, transaction value, and feedback-related fields showed the clearest churn differences
+- feedback and membership category show very strong separation in this dataset, so they are useful predictive signals, but should not be interpreted as direct business causes
+- transaction value also shows a meaningful pattern, although the exact result depends partly on how value bands are defined
+- data-cleaning decisions materially affect the analysis and should remain clearly documented
 
-- Logistic Regression (baseline)  
-- Random Forest  
-- Gradient Boosting  
-- XGBoost (benchmark model)  
+### Assumptions and Caveats From the Exploratory Analysis
 
-Evaluation metrics include:
-- F1 Score  
-- Precision and Recall  
-- ROC-AUC  
+- the supplied target column, `churn_risk_score`, is treated as the churn label
+- the working dataset behaves as a binary classification problem
+- this is a static historical dataset, not a full event-time churn timeline
+- some variables may be recorded close to the churn outcome, so interpretation should remain practical rather than causal
 
-Threshold sensitivity analysis is also performed to support decision-making.
+## Exercise 2, Predictive Modelling and Advanced Insights
 
----
+### Objective
 
-## Key Drivers of Churn
+The second part of the work focuses on building a predictive model that estimates whether a customer is likely to leave, and on identifying signals that can help guide business action.
 
-The model identifies the most influential predictors of customer churn based on feature importance analysis:
+### Modelling Approach
 
-![Feature Importance](./images/feature_importance.png)
+The modelling workflow included:
 
-<p align="center"><i>Top features driving churn predictions</i></p>
+- preparation of numeric, grouped categorical, and flag-based features
+- stratified train-test split
+- stratified cross-validation on the training set
+- comparison of multiple model families
+- selection of a final model using cross-validated F1
+- held-out test evaluation
+- feature importance and permutation importance analysis
 
-The strongest signals include:
-- Membership category
-- Wallet balance (points_in_wallet)
-- Transaction value patterns
-- Engagement and login behaviour
+### Models Compared
 
----
+Main comparison models:
 
-## Model Performance
+- Logistic Regression
+- Random Forest
+- Gradient Boosting
+- XGBoost
 
-The selected model demonstrates strong predictive performance on held-out test data:
+Secondary baseline models:
 
-![ROC Curve](./images/roc_curve.png)
+- KNN
+- Gaussian Naive Bayes
 
-<p align="center"><i>ROC curve showing model discrimination ability</i></p>
+The secondary baselines were included to show how performance differs across model families, while model selection remained focused on the stronger tabular classifiers.
 
----
+### Evaluation Approach
 
-## Cohort Analysis
+The main evaluation metrics were:
 
-Churn rates vary across customer cohorts based on their joining month:
+- F1 Score
+- Precision
+- Recall
+- ROC-AUC
+- Confusion Matrix
 
-![Cohort Trend](./images/cohort_trend.png)
+Threshold sensitivity was also reviewed to show how precision and recall change under different decision thresholds.
 
-<p align="center"><i>Churn rate by customer acquisition cohort</i></p>
+### Main Modelling Results
 
-*Note: This chart reflects differences across customer cohorts based on their joining month, not a true time-based churn trend. It indicates whether customers who joined during certain periods exhibit different churn behavior.*
+The modelling results were strong and consistent:
 
----
+- Gradient Boosting achieved the best cross-validated F1 among the main models
+- XGBoost and Random Forest also performed strongly
+- Logistic Regression remained a useful benchmark and stayed competitive
+- KNN and Gaussian Naive Bayes performed clearly worse, which supports the choice of stronger tabular models
+- train-test gaps were small for the leading models, which supports stability on unseen data
 
-## Key Results
+### Explainability and Advanced Insights
 
-- Gradient Boosting and XGBoost achieved strong predictive performance  
-- The most influential signals include:
-  - Membership category  
-  - Wallet balance  
-  - Transaction value  
-- Behavioural and complaint-related features provide additional context  
+The strongest predictive themes in the final model were:
 
----
+- membership category
+- customer value and wallet points
+- negative feedback
+- engagement-related features
 
-## Business Insights
+These themes appeared in both model-based importance and permutation importance views, which makes the overall pattern more credible within this dataset.
 
-The model highlights several patterns associated with higher churn risk:
+However, these signals should still be treated as predictive rather than causal. Some variables may partly reflect dataset structure or information recorded close to the churn outcome.
 
-- Customers in certain membership categories  
-- Customers with lower wallet balances and transaction activity  
-- Customers showing reduced engagement signals  
+### Business Recommendations
 
-These insights can support targeted retention strategies such as:
-- Proactive engagement campaigns  
-- Incentive-based retention offers  
-- Prioritisation of high-risk customer segments  
+- follow up quickly with customers who show negative feedback, and review complaint-related signals as supporting context
+- re-engage customers who are becoming less active
+- test retention offers for lower-value customers and customers with lower wallet points
+- review higher-risk membership groups and use different actions for different segments
 
----
+### How to Test the Model in Practice
 
-## Limitations
+- choose a small group of customers for a trial
+- use the model to identify customers who appear more likely to leave
+- apply a retention action to those customers, such as follow-up support or a targeted offer
+- keep another similar group unchanged so the results can be compared fairly
+- after the trial period, compare the two groups and check whether fewer customers left in the group that received the action
+- also check whether the result was worth the extra effort and cost
+- if the result is good, expand the approach to a larger group
 
-- The dataset is static and does not capture true temporal churn events  
-- Some features may not be available in real-time scoring scenarios  
-- Model outputs are predictive and not causal  
-- Further validation is required before production deployment
+### What Is Still Needed Before Production Use
+
+Before production rollout, the following would still be needed:
+
+- confirm that all required features are available at scoring time in real workflows
+- automate data refresh and scoring
+- connect outputs to CRM or operational workflows
+- monitor drift, missing data, and model performance over time
+- validate the model on future data, not only historical holdout data
+
+## Key Assumptions and Limitations
+
+- the supplied target is used as given and treated as binary classification
+- no true churn timestamp is available, so this is not a full event-time churn model
+- `relative_tenure_days` is relative to the latest joining date in the dataset, not true production tenure at scoring time
+- some variables, especially complaint and feedback-related fields, may be close to the outcome timing
+- feature importance is predictive, not causal
+- further validation is required before wider operational use
 
 ## Environment Setup
 
-Create a virtual environment and install dependencies:
+Create and activate a virtual environment, then install dependencies.
+
+### macOS / Linux
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Windows
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
 ## How to Run
 
-Run the analysis script:
+### Run the Python Script
 
 ```bash
 python churn_analysis.py
 ```
 
-Alternatively, open and run the Jupyter notebook:
+### Run the Notebook
 
 ```bash
 jupyter notebook churn_analysis.ipynb
 ```
 
+Then open the notebook and run cells in order.
+
+## Reproducibility Notes
+
+- the analysis expects the dataset file to be available at `data/churn.csv`
+- the notebook and Python script follow the same overall logic and should produce consistent results
+
 ## Project Structure
 
-```
+```text
 churn-prediction-gs/
 ├── data/
-│   └── churn.csv           # Customer data
-├── images/
-│   ├── workflow.png        # Pipeline diagram
-│   ├── feature_importance.png  # Generated by analysis
-│   └── roc_curve.png       # Generated by analysis
-├── churn_analysis.py       # Main analysis script
-├── churn_analysis.ipynb    # Jupyter notebook version
-├── requirements.txt        # Python dependencies
-└── README.md              # Project documentation
+│   └── churn.csv
+├── churn_analysis.py
+├── churn_analysis.ipynb
+├── requirements.txt
+└── README.md
 ```
+
+## Final Note
+
+This work is intended to provide a practical and interpretable churn-analysis workflow, combining exploratory analysis, predictive modelling, explainability, and business recommendations. The results are useful for prioritising retention actions, while still requiring future-data validation and production-readiness checks before wider use.

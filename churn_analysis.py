@@ -1026,13 +1026,13 @@ def main() -> None:
 
     # 2.7 Key Insights for the Business
     #
-    # Churn is fairly balanced in this dataset, so standard classification methods are reasonable.
-    # Grouped features such as login recency, time spent, wallet points, transaction value, and tenure make the churn patterns easier to describe.
-    # It is important to consider both risk and volume: some groups have higher churn rates, while others matter because they contain more customers.
-    # Some variables, especially feedback and membership category, show unusually sharp separation even in the raw counts. These should be treated as strong predictive signals in this dataset, not as direct business causes.
-    # The transaction-value pattern should be interpreted more cautiously because the observed result depends partly on how values are grouped, even after using a more balanced grouping approach.
-    # Some grouped variables may reflect dataset structure, segment definition, or timing close to the churn outcome, so the business wording should stay practical rather than causal.
-    # The cleaning decisions remain important and should stay clearly documented.
+    # Churn is fairly balanced in this dataset, so standard classification methods are suitable.
+    # Grouped features such as login recency, time spent, `points_in_wallet`, transaction value, and tenure make the churn patterns easier to interpret from a business perspective.
+    # High-risk groups help show where churn is more likely. Large groups also matter because even an average churn rate can affect many customers.
+    # Customers with negative feedback and customers in lower membership tiers are much more likely to churn in this dataset. These variables are useful predictive signals, but they should not be treated as proof of the underlying cause of churn.
+    # Customers in the higher transaction-value band show lower churn in this grouped view. This pattern is still useful, but it should be interpreted carefully because it depends partly on how the value bands are defined.
+    # Some variables may be recorded close to the churn outcome or may reflect the structure of the dataset. For that reason, these insights should be used to guide action rather than to claim causality.
+    # The data-cleaning steps have a real effect on the analysis and should remain clearly documented.
 
     # 3. Exercise 2, Predictive Modelling and Advanced Insights
 
@@ -1567,14 +1567,11 @@ def main() -> None:
             }
         )
     )
-    top_main_models = comparison_df[comparison_df["Model"].isin(main_model_names)].head(2)["Model"].tolist()
     display(
         Markdown(
-            f"""
-    Tree-based models lead this comparison, with {top_main_models[0]} performing best on cross-validated F1.
-    Logistic Regression remains a useful benchmark because it stays competitive while offering a simpler,
-    more interpretable reference point. KNN and Gaussian Naive Bayes are retained as secondary baselines,
-    but they are not the main decision drivers here.
+            """
+    Gradient Boosting performs best on cross-validated F1. XGBoost and Random Forest are also strong.
+    Logistic Regression remains a useful benchmark. KNN and Gaussian Naive Bayes are secondary baselines only.
     """
         )
     )
@@ -1608,8 +1605,7 @@ def main() -> None:
     display(
         Markdown(
             """
-    This train-vs-test view is a quick stability check. Smaller gaps indicate that the ranking seen in cross-validation
-    is carrying over to unseen data rather than depending only on the training sample.
+    This table checks stability. The smaller train-test gaps suggest that the stronger models are holding up on unseen data.
     """
         )
     )
@@ -1663,7 +1659,7 @@ def main() -> None:
     - Selected model: {best_model_name}
     - Why selected: highest mean cross-validated F1 among the main candidates
     - Cross-validated F1: {cv_summary.loc[best_model_name, 'cv_f1_mean']:.4f}
-    - Interpretation: held-out results are used below to confirm whether that advantage remains stable on unseen data
+    - Held-out test results below are used to check that this lead remains stable on unseen data
     """
         )
     )
@@ -1782,10 +1778,9 @@ def main() -> None:
     display(
         Markdown(
             """
-    Interpretation note: some signals, especially membership-category indicators, wallet-related
-    features, and negative feedback, appear unusually strong. These are useful predictive markers in this
-    dataset, but they may partly reflect dataset structure or timing close to churn, so they should be
-    treated as operational signals rather than causal proof.
+    Interpretation note: membership category, wallet points, and negative feedback are especially strong in this dataset.
+    These are useful predictive signals, but they may partly reflect dataset structure or timing close to churn, so they
+    should not be treated as causal proof. Complaint-related signals are better treated as supporting context.
     """
         )
     )
@@ -1820,10 +1815,9 @@ def main() -> None:
     display(
         Markdown(
             """
-    The strongest predictive signals cluster around membership commitment, customer value or loyalty,
-    customer experience, and behavioural engagement. Seeing similar themes across model-based and
-    permutation importance makes the pattern more credible, while still supporting only predictive,
-    not causal, interpretation.
+    The main predictive themes are membership, value, feedback, and engagement. These themes appear in both the
+    earlier EDA and the model-importance views, which strengthens the case for using them as practical signals.
+    The interpretation is still predictive, not causal.
     """
         )
     )
@@ -1832,30 +1826,33 @@ def main() -> None:
 
     section_title("Business Recommendations and Production Considerations")
 
-    top_features = perm_importance_df.head(10)["feature"].tolist()
     display(
         Markdown(
-            f"""
+            """
     ### 1. Key Business Insights
-    - Strong predictive signals include: {', '.join(top_features[:5])}
-    - These should be treated as prioritisation signals, not direct causes of churn.
+    - The model relies most on membership category, wallet points, and negative feedback.
+    - These are useful signals for identifying higher-risk customers, but they should not be treated as direct causes of churn.
 
-    ### 2. Recommended Action Areas
-    - Prioritise customers with recent negative feedback or unresolved complaint signals for service recovery.
-    - Target low-engagement customers with reactivation outreach before inactivity deepens.
-    - Test retention offers or loyalty nudges for lower-value customers and weaker wallet-point segments.
-    - Review higher-risk membership segments and tailor interventions by segment rather than using one generic campaign.
+    ### 2. Recommended Actions
+    - Follow up quickly with customers who show negative feedback, and review complaint-related signals as supporting context.
+    - Re-engage customers who are becoming less active.
+    - Test retention offers for lower-value customers and customers with lower wallet points.
+    - Review higher-risk membership groups and use different actions for different segments.
 
-    ### 3. Field Testing Approach
-    - Run an A/B test using model-driven interventions against a control group.
-    - Compare retention uplift against operational cost.
-    - Validate score quality on future data before broader rollout.
+    ### 3. How to Test the Model in Practice
+    - First, choose a small group of customers for a trial.
+    - Use the model to identify customers who appear more likely to leave.
+    - Apply a retention action to those customers, such as follow-up support or a targeted offer.
+    - Keep another similar group unchanged so the results can be compared fairly.
+    - After the trial period, compare the two groups and check whether fewer customers left in the group that received the action.
+    - Also check whether the result was worth the extra effort and cost.
+    - If the result is good, expand the approach to a larger group.
 
-    ### 4. Productionisation Considerations
-    - Confirm all model features are available at scoring time in real workflows.
-    - Automate refresh of input data and scoring outputs.
-    - Integrate outputs into CRM or customer operations processes.
-    - Monitor drift, missingness, and score performance over time.
+    ### 4. Production Considerations
+    - Make sure the required input features are available at scoring time.
+    - Automate data refresh and scoring.
+    - Connect outputs to CRM or operational workflows.
+    - Monitor drift, missing data, and model performance over time.
     """
         )
     )
@@ -1882,8 +1879,8 @@ def main() -> None:
     display(
         Markdown(
             """
-    - These outputs support prioritised outreach rather than relying only on anecdotal judgement.
-    - Similar high-level patterns across linear and tree-based models suggest the signal is not tied to one algorithm alone.
+    - These outputs can help teams prioritise outreach more consistently.
+    - Similar patterns across the stronger models suggest that the main signals are reasonably stable.
     """
         )
     )
@@ -1920,9 +1917,9 @@ def main() -> None:
     )
 
     print(
-        "\nThis workflow provides a practical and interpretable churn-modelling baseline. Tree-based models perform "
-        "best overall, Logistic Regression remains a useful benchmark, and the main predictive signals point to "
-        "clear retention priorities while still requiring future-data validation and production checks."
+        "\nThis workflow provides a practical churn-modelling baseline. Gradient Boosting performs best, the other "
+        "tree-based models are also strong, and the main signals point to clear retention priorities. The results "
+        "still need future-data validation and production checks."
     )
 
 
